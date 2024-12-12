@@ -1155,6 +1155,7 @@ public class VersionGarbageCollector {
 
             fullGCStats.documentRead();
             monitor.info("Collecting Full Garbage for doc [{}]", doc.getId());
+            log.info("Collecting Full Garbage for doc [{}]", doc.getId());
 
             if (AUDIT_LOG.isTraceEnabled()) {
                 AUDIT_LOG.trace("<Collecting> Garbage in doc [{}]", doc.getId());
@@ -1179,6 +1180,7 @@ public class VersionGarbageCollector {
                     if (AUDIT_LOG.isDebugEnabled()){
                         AUDIT_LOG.debug("Skipping orphaned document [{}] for mode [{}]", doc.getId(), fullGcMode);
                     }
+                    log.info("Skipping orphaned document [{}] for mode [{}]", doc.getId(), fullGcMode);
                     return;
                 }
                 collectDeletedProperties(doc, phases, op, traversedState);
@@ -1349,6 +1351,7 @@ public class VersionGarbageCollector {
             garbageDocsCount++;
             totalGarbageDocsCount++;
             monitor.info("Deleted orphaned or deleted doc [{}]", doc.getId());
+            log.info("Deleted orphaned or deleted doc [{}]", doc.getId());
             orphanOrDeletedRemovalMap.put(doc.getId(), doc.getModified());
             orphanOrDeletedRemovalPathMap.put(doc.getId(), doc.getPath());
             fullGCStats.candidateDocuments(GCPhase.FULL_GC_COLLECT_ORPHAN_NODES, 1);
@@ -1936,6 +1939,7 @@ public class VersionGarbageCollector {
             }
 
             monitor.info("Proceeding to update [{}] documents", updateOpList.size());
+            log.info("Proceeding to update [{}] documents", updateOpList.size());
 
             if (AUDIT_LOG.isDebugEnabled() || isFullGCDryRun) {
                 String updateIds = updateOpList.stream().map(UpdateOp::getId).collect(joining(", "));
@@ -2395,6 +2399,7 @@ public class VersionGarbageCollector {
                 return 0;
             }
             monitor.info("Proceeding to delete [{}] documents [{}]", numDocuments, label);
+            log.info("Proceeding to delete [{}] documents [{}]", numDocuments, label);
 
             Iterator<List<String>> idListItr = partition(docIdsToDelete, DELETE_BATCH_SIZE);
             int deletedCount = 0;
@@ -2448,6 +2453,7 @@ public class VersionGarbageCollector {
                         double progress = lastLoggedCount * 1.0 / getNumDocuments() * 100;
                         String msg = String.format("Deleted %d (%1.2f%%) documents so far", deletedCount, progress);
                         monitor.info(msg);
+                        log.info(msg);
                     }
                 } finally {
                     delayOnModifications(timer.stop().elapsed(TimeUnit.MILLISECONDS), cancel, options.delayFactor);

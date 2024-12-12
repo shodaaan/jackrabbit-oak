@@ -44,6 +44,7 @@ import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStoreBuilder;
 import org.apache.jackrabbit.oak.plugins.document.DocumentStore;
 import org.apache.jackrabbit.oak.plugins.document.FormatVersion;
+import org.apache.jackrabbit.oak.plugins.document.LeaseCheckMode;
 import org.apache.jackrabbit.oak.plugins.document.MissingLastRevSeeker;
 import org.apache.jackrabbit.oak.plugins.document.NodeDocument;
 import org.apache.jackrabbit.oak.plugins.document.RevisionContextWrapper;
@@ -161,7 +162,7 @@ public class RevisionsCommand implements Command {
                             "applying the changes in memory and will raise flag if it can cause issues")
                     .withRequiredArg().ofType(Boolean.class).defaultsTo(TRUE);
             fullGcMode = parser.accepts("fullGcMode", "Mode of fullGC")
-                    .withRequiredArg().ofType(Integer.class).defaultsTo(0);
+                    .withRequiredArg().ofType(Integer.class).defaultsTo(2);
             continuous = parser
                     .accepts("continuous", "run continuously (collect only)");
             fullGCOnly = parser
@@ -336,7 +337,7 @@ public class RevisionsCommand implements Command {
     }
 
     private VersionGarbageCollector bootstrapVGC(RevisionsOptions options, Closer closer, boolean fullGCEnabled) throws IOException {
-        DocumentNodeStoreBuilder<?> builder = createDocumentMKBuilder(options, closer);
+        DocumentNodeStoreBuilder<?> builder = createDocumentMKBuilder(options, closer).setLeaseCheckMode(LeaseCheckMode.DISABLED).setAsyncDelay(0);
         if (builder == null) {
             System.err.println("revisions mode only available for DocumentNodeStore");
             System.exit(1);
@@ -366,7 +367,11 @@ public class RevisionsCommand implements Command {
         // set it read-only before the DocumentNodeStore is created
         // this prevents the DocumentNodeStore from writing a new
         // clusterId to the clusterNodes and nodes collections
-        builder.setReadOnlyMode();
+
+        //TODO: DocumentNodeStore MUST be able to clean garbage
+        //builder.setReadOnlyMode();
+        //builder.setLeaseCheckMode(LeaseCheckMode.DISABLED).setAsyncDelay(0);
+
         useMemoryBlobStore(builder);
         // create a version GC that operates on a read-only DocumentNodeStore
         // and a GC support with a writable DocumentStore
