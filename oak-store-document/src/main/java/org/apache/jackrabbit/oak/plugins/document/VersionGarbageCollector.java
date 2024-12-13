@@ -163,6 +163,42 @@ public class VersionGarbageCollector {
     static final String SETTINGS_COLLECTION_FULL_GC_DRY_RUN_DOCUMENT_ID_PROP = "fullGCDryRunId";
 
     /**
+     * Property name to timestamp till when last full-GC run happened in dryRunWithFullGCStatistics mode only
+     */
+    static final String SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_TIMESTAMP_PROP = "fullGCDryRunWithStatisticsTimeStamp";
+
+    /**
+     * Property name to _id till when last full-GC run happened in dryRunWithFullGCStatistics mode only
+     */
+    static final String SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DOCUMENT_ID_PROP = "fullGCDryRunWithStatisticsId";
+
+    /**
+     *
+     * Gets the current entries in the versionGC document for dry run with statistics mode.
+     *
+     *                     // for deleted properties, oldRevs & unmergedBC
+     *                     stats.updatedFullGCDocsCount += updateOpList.size();
+     *                     stats.deletedPropsCount += deletedPropsCountMap.values().stream().reduce(0, Integer::sum);
+     *                     stats.deletedInternalPropsCount += deletedInternalPropsCountMap.values().stream().reduce(0, Integer::sum);
+     *                     stats.deletedPropRevsCount += deletedPropRevsCountMap.values().stream().reduce(0, Integer::sum);
+     *                     stats.deletedInternalPropRevsCount += deletedInternalPropRevsCountMap.values().stream().reduce(0, Integer::sum);
+     *                     stats.deletedUnmergedBCCount += deletedUnmergedBCSet.size();
+     *
+     *                     // for orphan nodes.
+     *                     stats.updatedFullGCDocsCount += orphanOrDeletedRemovalMap.size();
+     *                     stats.deletedDocGCCount += orphanOrDeletedRemovalMap.size();
+     *                     stats.deletedOrphanNodesCount += orphanOrDeletedRemovalMap.size();
+     * @return
+     */
+    static final String SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_UPDATED_FULLGC_DOCS_COUNT = "fullGCDryRunWithStatistics_updatedFullGCDocsCount";
+    static final String SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_PROPS_COUNT = "fullGCDryRunWithStatistics_deletedPropsCount";
+    static final String SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_INTERNAL_PROPS_COUNT = "fullGCDryRunWithStatistics_deletedInternalPropsCount";
+    static final String SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_PROP_REVS_COUNT = "fullGCDryRunWithStatistics_deletedPropRevsCount";
+    static final String SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_INTERNAL_PROP_REVS_COUNT = "fullGCDryRunWithStatistics_deletedInternalPropRevsCount";
+    static final String SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_ORPHAN_NODES_COUNT = "fullGCDryRunWithStatistics_deletedOrphanNodesCount";
+    static final String SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_DOCS_COUNT = "fullGCDryRunWithStatistics_deletedDocsCount";
+
+    /**
      * During hardening of FullGC one can choose level type of garbage should be cleaned up.
      * Ultimately the goal is to clean up all possible garbage. After hardening these modes
      * might no longer be supported.
@@ -240,6 +276,13 @@ public class VersionGarbageCollector {
     private final DocumentStore ds;
     private final boolean fullGCEnabled;
     private final boolean isFullGCDryRun;
+    /**
+     * If true, the full GC will be executed as a dry run (no documents actually cleaned up) with statistics
+     * saved into MongoDB collection SETTINGS after each batch is processed.
+     * Statistics saved will include the number of garbage documents of each fullGCMode type that should be removed
+     * as part of fullGC, and also the number of empty properties that should be removed.
+     */
+    private final boolean isFullGCDryRunWithStatistics;
     private final boolean embeddedVerification;
     private final double fullGCDelayFactor;
     private final int fullGCBatchSize;
@@ -259,7 +302,17 @@ public class VersionGarbageCollector {
                             final boolean isFullGCDryRun,
                             final boolean embeddedVerification) {
         this(nodeStore, gcSupport, fullGCEnabled, isFullGCDryRun, embeddedVerification, DEFAULT_FULL_GC_MODE,
-                0, DEFAULT_FGC_BATCH_SIZE, DEFAULT_FGC_PROGRESS_SIZE);
+                0, DEFAULT_FGC_BATCH_SIZE, DEFAULT_FGC_PROGRESS_SIZE, false);
+    }
+
+    VersionGarbageCollector(DocumentNodeStore nodeStore,
+                            VersionGCSupport gcSupport,
+                            final boolean fullGCEnabled,
+                            final boolean isFullGCDryRun,
+                            final boolean embeddedVerification,
+                            final boolean isFullGCDryRunWithStatistics) {
+        this(nodeStore, gcSupport, fullGCEnabled, isFullGCDryRun, embeddedVerification, DEFAULT_FULL_GC_MODE,
+                0, DEFAULT_FGC_BATCH_SIZE, DEFAULT_FGC_PROGRESS_SIZE, isFullGCDryRunWithStatistics);
     }
 
     VersionGarbageCollector(DocumentNodeStore nodeStore,
@@ -271,11 +324,26 @@ public class VersionGarbageCollector {
                             final double fullGCDelayFactor,
                             final int fullGCBatchSize,
                             final int fullGCProgressSize) {
+        this(nodeStore, gcSupport, fullGCEnabled, isFullGCDryRun, embeddedVerification, fullGCMode, fullGCDelayFactor,
+                fullGCBatchSize, fullGCProgressSize, false);
+    }
+
+    VersionGarbageCollector(DocumentNodeStore nodeStore,
+                            VersionGCSupport gcSupport,
+                            final boolean fullGCEnabled,
+                            final boolean isFullGCDryRun,
+                            final boolean embeddedVerification,
+                            final int fullGCMode,
+                            final double fullGCDelayFactor,
+                            final int fullGCBatchSize,
+                            final int fullGCProgressSize,
+                            final boolean isFullGCDryRunWithStatistics) {
         this.nodeStore = nodeStore;
         this.versionStore = gcSupport;
         this.ds = gcSupport.getDocumentStore();
         this.fullGCEnabled = fullGCEnabled;
         this.isFullGCDryRun = isFullGCDryRun;
+        this.isFullGCDryRunWithStatistics = isFullGCDryRunWithStatistics;
         this.embeddedVerification = embeddedVerification;
         this.fullGCDelayFactor = fullGCDelayFactor;
         this.fullGCBatchSize = Math.min(fullGCBatchSize, fullGCProgressSize);
@@ -410,13 +478,27 @@ public class VersionGarbageCollector {
         ds.findAndUpdate(SETTINGS, op);
     }
 
+    public void resetDryRunWithStatistics() {
+        UpdateOp op = new UpdateOp(SETTINGS_COLLECTION_ID, false);
+        op.remove(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_TIMESTAMP_PROP);
+        op.remove(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DOCUMENT_ID_PROP);
+        op.remove(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_UPDATED_FULLGC_DOCS_COUNT);
+        op.remove(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_PROPS_COUNT);
+        op.remove(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_INTERNAL_PROPS_COUNT);
+        op.remove(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_PROP_REVS_COUNT);
+        op.remove(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_INTERNAL_PROP_REVS_COUNT);
+        op.remove(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_ORPHAN_NODES_COUNT);
+        op.remove(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_DOCS_COUNT);
+        ds.findAndUpdate(SETTINGS, op);
+    }
+
     public VersionGCInfo getInfo(long maxRevisionAge, TimeUnit unit)
             throws IOException {
         long maxRevisionAgeInMillis = unit.toMillis(maxRevisionAge);
         long now = nodeStore.getClock().getTime();
         VersionGCRecommendations rec = new VersionGCRecommendations(maxRevisionAgeInMillis, nodeStore.getCheckpoints(),
                 !nodeStore.isReadOnlyMode(), nodeStore.getClock(), versionStore, options, gcMonitor, fullGCEnabled,
-                isFullGCDryRun);
+                isFullGCDryRun, isFullGCDryRunWithStatistics);
         int estimatedIterations = -1;
         if (rec.suggestedIntervalMs > 0) {
             estimatedIterations = (int)Math.ceil((double) (now - rec.scope.toMs) / rec.suggestedIntervalMs);
@@ -502,6 +584,14 @@ public class VersionGarbageCollector {
                 fullGCDocsElapsed, collectFullGCElapsed, collectOrphanNodesElapsed, collectDeletedPropsElapsed,
                 deleteFullGCDocsElapsed, collectDeletedOldRevsElapsed, collectUnmergedBCElapsed;
 
+        long fullGCStatisticsDeletedDocsCount;
+        long fullGCStatisticsUpdatedFullGCDocsCount;
+        long fullGCStatisticsDeletedPropsCount;
+        long fullGCStatisticsDeletedInternalPropsCount;
+        long fullGCStatisticsDeletedPropRevsCount;
+        long fullGCStatisticsDeletedInternalPropRevsCount;
+        long fullGCStatisticsDeletedOrphanNodesCount;
+
         @Override
         public String toString() {
             String timings;
@@ -575,6 +665,17 @@ public class VersionGarbageCollector {
                     ", " + timings + "}";
         }
 
+        public String fullGCDryRunStatisticsToString() {
+            return "FullGCDryRunStatistics{" +
+                    "updatedFullGCDocsCount=" + fullGCStatisticsUpdatedFullGCDocsCount +
+                    ", deletedPropsCount=" + fullGCStatisticsDeletedPropsCount +
+                    ", deletedInternalPropsCount=" + fullGCStatisticsDeletedInternalPropsCount +
+                    ", deletedPropRevsCount=" + fullGCStatisticsDeletedPropRevsCount +
+                    ", deletedInternalPropRevsCount=" + fullGCStatisticsDeletedInternalPropRevsCount +
+                    ", deletedDocsCount=" + fullGCStatisticsDeletedDocsCount +
+                    ", deletedOrphanNodesCount=" + fullGCStatisticsDeletedOrphanNodesCount + "}";
+        }
+
         void addRun(VersionGCStats run) {
             ++iterationCount;
             this.ignoredGCDueToCheckPoint = run.ignoredGCDueToCheckPoint;
@@ -636,6 +737,23 @@ public class VersionGarbageCollector {
                 this.collectDeletedOldRevsElapsed += run.collectDeletedOldRevs.elapsed(MICROSECONDS);
                 this.collectUnmergedBCElapsed += run.collectUnmergedBC.elapsed(MICROSECONDS);
             }
+        }
+
+        /**
+         * Only applies to fullGC dry run with statistics mode.
+         *
+         * Initialize the dry run with statistics entries in stats with info retrieved from the last run from MongoDB.
+         * Call this method when fullGC dry run with statistics mode is started.
+         * @param statisticsMap
+         */
+        public void initForDryRunWithStatistics(Map<String, Object> statisticsMap) {
+            this.fullGCStatisticsDeletedDocsCount = (long) statisticsMap.get(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_DOCS_COUNT);
+            this.fullGCStatisticsUpdatedFullGCDocsCount = (long) statisticsMap.get(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_UPDATED_FULLGC_DOCS_COUNT);
+            this.fullGCStatisticsDeletedPropsCount = (long) statisticsMap.get(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_PROPS_COUNT);
+            this.fullGCStatisticsDeletedInternalPropsCount = (long) statisticsMap.get(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_INTERNAL_PROPS_COUNT);
+            this.fullGCStatisticsDeletedPropRevsCount = (long) statisticsMap.get(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_PROP_REVS_COUNT);
+            this.fullGCStatisticsDeletedInternalPropRevsCount = (long) statisticsMap.get(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_INTERNAL_PROP_REVS_COUNT);
+            this.fullGCStatisticsDeletedOrphanNodesCount = (long) statisticsMap.get(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_ORPHAN_NODES_COUNT);
         }
     }
 
@@ -797,10 +915,10 @@ public class VersionGarbageCollector {
             stats.active.start();
             VersionGCRecommendations rec = new VersionGCRecommendations(maxRevisionAgeInMillis, nodeStore.getCheckpoints(),
                     !nodeStore.isReadOnlyMode(), nodeStore.getClock(), versionStore, options, gcMonitor, fullGCEnabled,
-                    isFullGCDryRun);
+                    isFullGCDryRun, isFullGCDryRunWithStatistics);
             GCPhases phases = new GCPhases(cancel, stats, gcMonitor);
             try {
-                if (!isFullGCDryRun) {
+                if (!isFullGCDryRun && !isFullGCDryRunWithStatistics) {
                     // only run if not fullGC dryRun mode
                     if (rec.ignoreDueToCheckPoint) {
                         phases.stats.ignoredGCDueToCheckPoint = true;
@@ -819,6 +937,12 @@ public class VersionGarbageCollector {
 
                 // now run full GC if enabled
                 if (fullGCEnabled) {
+
+                    // check init stats for dry run with statistics
+                    if (isFullGCDryRunWithStatistics) {
+                        rec.initStatsForFullGCDryRunWithStatistics(stats);
+                    }
+
                     stats.fullGCActive.start();
                     if (rec.ignoreFullGCDueToCheckPoint) {
                         phases.stats.ignoredFullGCDueToCheckPoint = true;
@@ -846,6 +970,11 @@ public class VersionGarbageCollector {
             rec.evaluate(stats);
             monitor.info("Revision garbage collection finished in {}. {}",
                     TimeDurationFormatter.forLogging().format(phases.elapsed.elapsed(MICROSECONDS), MICROSECONDS), stats);
+
+            if (fullGCEnabled && isFullGCDryRunWithStatistics) {
+                log.info("Full GC dry run with statistics mode saved stats to settings/version collection: {}", stats.fullGCDryRunStatisticsToString());
+            }
+
             if (fullGCEnabled && stats.fullGCActive.isRunning()) {
                 // probably limitExceeded == true case
                 stats.fullGCActive.stop();
@@ -945,6 +1074,10 @@ public class VersionGarbageCollector {
                             // now remove the garbage in one go, if any
                             if (gc.hasGarbage() && phases.start(GCPhase.FULL_GC_CLEANUP)) {
                                 gc.removeGarbage(phases.stats);
+                                //TODO GW Winter 2024: save stats to SETTINGS collection in MongoDB for dry run with statistics and LOG this - see line 888 call to VersionGCRecommendations
+                                if (isFullGCDryRunWithStatistics) {
+
+                                }
                                 phases.stop(GCPhase.FULL_GC_CLEANUP);
                             } else {
                                 if (log.isDebugEnabled()) {
@@ -1148,17 +1281,23 @@ public class VersionGarbageCollector {
         }
 
         public void collectGarbage(final NodeDocument doc, final GCPhases phases) {
-            if (fullGcMode == NONE) {
+            if (fullGcMode == NONE && !isFullGCDryRunWithStatistics) {
                 monitor.warn("Skipping FullGC. No Mode has been selected.");
                 return;
             }
 
             fullGCStats.documentRead();
-            monitor.info("Collecting Full Garbage for doc [{}]", doc.getId());
-            log.info("Collecting Full Garbage for doc [{}]", doc.getId());
+            if (!isFullGCDryRunWithStatistics) {
+                monitor.info("Collecting Full Garbage for doc [{}]", doc.getId());
+                log.info("Collecting Full Garbage for doc [{}]", doc.getId());
 
-            if (AUDIT_LOG.isTraceEnabled()) {
-                AUDIT_LOG.trace("<Collecting> Garbage in doc [{}]", doc.getId());
+                if (AUDIT_LOG.isTraceEnabled()) {
+                    AUDIT_LOG.trace("<Collecting> Garbage in doc [{}]", doc.getId());
+                }
+            }
+            else {
+                monitor.info("Evaluating for Full Garbage statistics doc [{}]", doc.getId());
+                log.info("Evaluating for Full Garbage statistics doc [{}]", doc.getId());
             }
 
             final UpdateOp op = new UpdateOp(requireNonNull(doc.getId()), false);
@@ -1173,8 +1312,23 @@ public class VersionGarbageCollector {
                             greatestExistingAncestorOrSelf, name);
                 }
             }
-            
-            if (fullGcMode == EMPTYPROPS) {
+
+            // if the current running mode is dry run with statistics, then we need to do ALL of the garbage
+            // collection steps in order to determine what garbage of each type would be collected for the document
+            if (isFullGCDryRunWithStatistics) {
+
+                // GAP_ORPHANS and ALL_ORPHANS is checked first - if document will be removed because it is an orphan,
+                // then no other collections are needed for it
+                if (!isDeletedOrOrphanedNode(traversedState, greatestExistingAncestorOrSelf, phases, doc)) {
+                    // EMPTY_PROPS
+                    collectDeletedProperties(doc, phases, op, traversedState);
+                    // KEEP_ONE
+                    collectUnusedPropertyRevisions(doc, phases, op, (DocumentNodeState) traversedState, false);
+                    // internal prop removals ??
+                    combineInternalPropRemovals(doc, op);
+                }
+            }
+            else if (fullGcMode == EMPTYPROPS) {
                 if (!traversedState.exists()) {
                     // doc is an orphan, this mode skips orphans
                     if (AUDIT_LOG.isDebugEnabled()){
@@ -1236,8 +1390,10 @@ public class VersionGarbageCollector {
                 op.equals(MODIFIED_IN_SECS, doc.getModified());
                 garbageDocsCount++;
                 totalGarbageDocsCount++;
-                monitor.info("Collected [{}] garbage count in [{}]", op.getChanges().size(), doc.getId());
-                AUDIT_LOG.info("<Collected> [{}] garbage count in [{}]", op.getChanges().size(), doc.getId());
+                if (!isFullGCDryRunWithStatistics) {
+                    monitor.info("Collected [{}] garbage count in [{}]", op.getChanges().size(), doc.getId());
+                    AUDIT_LOG.info("<Collected> [{}] garbage count in [{}]", op.getChanges().size(), doc.getId());
+                }
                 updateOpList.add(op);
             }
             if (log.isTraceEnabled() && op.hasChanges()) {
@@ -1322,7 +1478,8 @@ public class VersionGarbageCollector {
                 phases.stop(GCPhase.FULL_GC_COLLECT_ORPHAN_NODES);
                 return false;
             }
-            if (fullGcMode == GAP_ORPHANS || fullGcMode == GAP_ORPHANS_EMPTYPROPS) {
+            // document will be processed if it is an orphan or if the current fullGC run is dry run with statistics
+            if (isFullGCDryRunWithStatistics || fullGcMode == GAP_ORPHANS || fullGcMode == GAP_ORPHANS_EMPTYPROPS) {
                 // check the ancestor docs for gaps
                 final Path docPath = doc.getPath();
                 final Path geaChildPath = docPath.getAncestor(docPath.getDepth() - greatestExistingAncestorOrSelf.getDepth() - 1);
@@ -1350,19 +1507,24 @@ public class VersionGarbageCollector {
             // if this is an orphaned node, all that is needed is its removal
             garbageDocsCount++;
             totalGarbageDocsCount++;
-            monitor.info("Deleted orphaned or deleted doc [{}]", doc.getId());
-            log.info("Deleted orphaned or deleted doc [{}]", doc.getId());
+            if (!isFullGCDryRunWithStatistics) {
+                monitor.info("Deleted orphaned or deleted doc [{}]", doc.getId());
+                log.info("Deleted orphaned or deleted doc [{}]", doc.getId());
+            }
+            else {
+                monitor.info("Processed as part of fullGC dry run with statistics orphaned or deleted doc [{}]", doc.getId());
+                log.info("Processed as part of fullGC dry run with statistics orphaned or deleted doc [{}]", doc.getId());
+            }
             orphanOrDeletedRemovalMap.put(doc.getId(), doc.getModified());
             orphanOrDeletedRemovalPathMap.put(doc.getId(), doc.getPath());
             fullGCStats.candidateDocuments(GCPhase.FULL_GC_COLLECT_ORPHAN_NODES, 1);
 
-            if (AUDIT_LOG.isDebugEnabled()) {
+            if (AUDIT_LOG.isDebugEnabled() && !isFullGCDryRunWithStatistics) {
                 AUDIT_LOG.debug("<Collected> [{}] orphaned node", doc.getId());
             }
 
             phases.stop(GCPhase.FULL_GC_COLLECT_ORPHAN_NODES);
             return true;
-
         }
 
         private boolean hasGarbage() {
@@ -1932,7 +2094,7 @@ public class VersionGarbageCollector {
         public void removeGarbage(final VersionGCStats stats) {
 
             if (updateOpList.isEmpty() && orphanOrDeletedRemovalMap.isEmpty()) {
-                if (log.isDebugEnabled() || isFullGCDryRun) {
+                if (log.isDebugEnabled() || isFullGCDryRun || isFullGCDryRunWithStatistics) {
                     log.debug("Skipping removal of Full garbage, cause no garbage detected");
                 }
                 return;
@@ -1941,7 +2103,7 @@ public class VersionGarbageCollector {
             monitor.info("Proceeding to update [{}] documents", updateOpList.size());
             log.info("Proceeding to update [{}] documents", updateOpList.size());
 
-            if (AUDIT_LOG.isDebugEnabled() || isFullGCDryRun) {
+            if (AUDIT_LOG.isDebugEnabled() || isFullGCDryRun || isFullGCDryRunWithStatistics) {
                 String updateIds = updateOpList.stream().map(UpdateOp::getId).collect(joining(", "));
                 String orphanIds = join(", ", orphanOrDeletedRemovalMap.keySet());
                 log.debug("Performing batch update of ids [{}] and removal of orphan ids [{}]", updateIds, orphanIds);
@@ -2010,8 +2172,8 @@ public class VersionGarbageCollector {
                         }
                     }
                 }
-                if (!isFullGCDryRun) {
-                    // only delete these in case it is not a dryRun
+                if (!isFullGCDryRun && !isFullGCDryRunWithStatistics) {
+                    // only delete these in case it is not a dryRun or dryRunWithFullGCStatistics
 
                     if (!orphanOrDeletedRemovalMap.isEmpty()) {
                         // use remove() with the modified check to rule
@@ -2066,7 +2228,7 @@ public class VersionGarbageCollector {
                         fullGCStats.documentsUpdateSkipped((long)oldDocs.size() - updatedDocs);
                     }
                 } else {
-                    // collect approx stats only in case of dryRun by assuming everything would succeed
+                    // collect approx stats only in case of dryRun / dryRunWithStatistics by assuming everything would succeed
 
                     // for deleted properties, oldRevs & unmergedBC
                     stats.updatedFullGCDocsCount += updateOpList.size();
@@ -2080,6 +2242,20 @@ public class VersionGarbageCollector {
                     stats.updatedFullGCDocsCount += orphanOrDeletedRemovalMap.size();
                     stats.deletedDocGCCount += orphanOrDeletedRemovalMap.size();
                     stats.deletedOrphanNodesCount += orphanOrDeletedRemovalMap.size();
+
+                    // update stats for fullGC dry run with statistics
+                    if (isFullGCDryRunWithStatistics) {
+                        stats.fullGCStatisticsUpdatedFullGCDocsCount += updateOpList.size();
+                        stats.fullGCStatisticsDeletedPropsCount += deletedPropsCountMap.values().stream().reduce(0, Integer::sum);
+                        stats.fullGCStatisticsDeletedInternalPropsCount += deletedInternalPropsCountMap.values().stream().reduce(0, Integer::sum);
+                        stats.fullGCStatisticsDeletedPropRevsCount += deletedPropRevsCountMap.values().stream().reduce(0, Integer::sum);
+                        stats.fullGCStatisticsDeletedInternalPropsCount += deletedInternalPropRevsCountMap.values().stream().reduce(0, Integer::sum);
+
+                        // for orphan nodes.
+                        stats.fullGCStatisticsUpdatedFullGCDocsCount += orphanOrDeletedRemovalMap.size();
+                        stats.fullGCStatisticsDeletedDocsCount += orphanOrDeletedRemovalMap.size();
+                        stats.fullGCStatisticsDeletedOrphanNodesCount += orphanOrDeletedRemovalMap.size();
+                    }
                 }
             } finally {
                 // now reset delete metadata

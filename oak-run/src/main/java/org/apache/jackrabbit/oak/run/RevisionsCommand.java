@@ -114,6 +114,7 @@ public class RevisionsCommand implements Command {
         static final String CMD_RESET = "reset";
         static final String CMD_SWEEP = "sweep";
         static final String CMD_FULL_GC = "fullGC";
+        static final String CMD_RESET_FULLGC_DRYRUN_WITH_STATISTICS = "resetFullGCDryRunWithStatistics";
 
         final OptionSpec<?> once;
         final OptionSpec<Integer> limit;
@@ -133,6 +134,7 @@ public class RevisionsCommand implements Command {
         final OptionSpec<?> entireRepo;
         final OptionSpec<?> compact;
         final OptionSpec<Boolean> dryRun;
+        final OptionSpec<Boolean> dryRunWithStatistics;
         final OptionSpec<Boolean> embeddedVerification;
         final OptionSpec<Integer> fullGcMode;
 
@@ -157,6 +159,9 @@ public class RevisionsCommand implements Command {
                     .ofType(Long.class).defaultsTo(-1L);
             dryRun = parser.accepts("dryRun", "dryRun of fullGC i.e. only print what would be deleted")
                     .withRequiredArg().ofType(Boolean.class).defaultsTo(TRUE);
+            dryRunWithStatistics = parser.accepts("dryRunWithStatistics", "dryRun with statistics of fullGC i.e. "
+                    + "only save to MongoDB SETTINGS the total amount of garbage of each type that would be deleted")
+                    .withRequiredArg().ofType(Boolean.class).defaultsTo(FALSE);
             embeddedVerification = parser.accepts("verify", "enable embedded verification of fullGC " +
                             "during dryRun mode i.e. will verify the effect of fullGC operation on each document after " +
                             "applying the changes in memory and will raise flag if it can cause issues")
@@ -217,6 +222,10 @@ public class RevisionsCommand implements Command {
 
         boolean isDryRun() {
             return dryRun.value(options);
+        }
+
+        boolean isDryRunWithStatistics() {
+            return dryRunWithStatistics.value(options);
         }
 
         boolean isEmbeddedVerificationEnabled() {
@@ -302,7 +311,10 @@ public class RevisionsCommand implements Command {
                 collect(options, closer, false);
             } else if (RevisionsOptions.CMD_RESET.equals(subCmd)) {
                 reset(options, closer);
-            } else if (RevisionsOptions.CMD_SWEEP.equals(subCmd)) {
+            } else if (RevisionsOptions.CMD_RESET_FULLGC_DRYRUN_WITH_STATISTICS.equals(subCmd)) {
+                resetFullGCDryRunWithStatistics(options, closer);
+            }
+            else if (RevisionsOptions.CMD_SWEEP.equals(subCmd)) {
                 sweep(options, closer);
             } else if (RevisionsOptions.CMD_FULL_GC.equals(subCmd)) {
                 boolean entireRepo = options.isEntireRepo();
@@ -385,7 +397,7 @@ public class RevisionsCommand implements Command {
         System.out.println("FullGcDelayFactory is : " + options.getFullGcDelayFactor());
         System.out.println("FullGcBatchSize is : " + options.getFullGcBatchSize());
         System.out.println("FullGcProgressSize is : " + options.getFullGcProgressSize());
-        VersionGarbageCollector gc = createVersionGC(builder.build(), gcSupport, options.isDryRun(), builder);
+        VersionGarbageCollector gc = createVersionGC(builder.build(), gcSupport, options.isDryRun(), options.isDryRunWithStatistics(), builder);
 
         VersionGCOptions gcOptions = gc.getOptions();
         gcOptions = gcOptions.withDelayFactor(options.getDelay());
@@ -541,6 +553,13 @@ public class RevisionsCommand implements Command {
         } else {
             gc.reset();
         }
+    }
+
+    private void resetFullGCDryRunWithStatistics(RevisionsOptions options, Closer closer)
+            throws IOException {
+        VersionGarbageCollector gc = bootstrapVGC(options, closer, false);
+        System.out.println("resetting fullGC dry run statistics");
+        gc.resetDryRunWithStatistics();
     }
 
     private void sweep(RevisionsOptions options, Closer closer)

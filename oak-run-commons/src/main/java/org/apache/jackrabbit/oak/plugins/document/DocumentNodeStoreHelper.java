@@ -72,10 +72,11 @@ public class DocumentNodeStoreHelper {
     }
 
     public static VersionGarbageCollector createVersionGC(final DocumentNodeStore nodeStore, final VersionGCSupport gcSupport,
-                                                          boolean isFullGCDryRun, final DocumentNodeStoreBuilder<?> builder) {
+                                                          boolean isFullGCDryRun, boolean isFullGCDryRunWithStatistics,
+                                                          final DocumentNodeStoreBuilder<?> builder) {
         return new VersionGarbageCollector(nodeStore, gcSupport, isFullGCEnabled(builder), isFullGCDryRun,
                 isEmbeddedVerificationEnabled(builder), builder.getFullGCMode(), builder.getFullGCDelayFactor(),
-                builder.getFullGCBatchSize(), builder.getFullGCProgressSize());
+                builder.getFullGCBatchSize(), builder.getFullGCProgressSize(), isFullGCDryRunWithStatistics);
     }
 
     public static DocumentNodeState readNode(DocumentNodeStore documentNodeStore, Path path, RevisionVector rootRevision) {

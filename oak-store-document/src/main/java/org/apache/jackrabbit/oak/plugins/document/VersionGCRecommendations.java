@@ -42,6 +42,15 @@ import static org.apache.jackrabbit.oak.plugins.document.VersionGCRecommendation
 import static org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.SETTINGS_COLLECTION_FULL_GC_DOCUMENT_ID_PROP;
 import static org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.SETTINGS_COLLECTION_FULL_GC_DRY_RUN_DOCUMENT_ID_PROP;
 import static org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.SETTINGS_COLLECTION_FULL_GC_DRY_RUN_TIMESTAMP_PROP;
+import static org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_DOCS_COUNT;
+import static org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_INTERNAL_PROPS_COUNT;
+import static org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_INTERNAL_PROP_REVS_COUNT;
+import static org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_ORPHAN_NODES_COUNT;
+import static org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_PROPS_COUNT;
+import static org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_PROP_REVS_COUNT;
+import static org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DOCUMENT_ID_PROP;
+import static org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_TIMESTAMP_PROP;
+import static org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_UPDATED_FULLGC_DOCS_COUNT;
 import static org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.SETTINGS_COLLECTION_FULL_GC_TIMESTAMP_PROP;
 import static org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.SETTINGS_COLLECTION_ID;
 import static org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.SETTINGS_COLLECTION_OLDEST_TIMESTAMP_PROP;
@@ -81,6 +90,14 @@ public class VersionGCRecommendations {
     // It will also run only if fullGC is not running.
     private final boolean isFullGCDryRun;
 
+    private final boolean isFullGCDryRunWithStatistics;
+
+    VersionGCRecommendations(long maxRevisionAgeMs, Checkpoints checkpoints, boolean checkpointCleanup, Clock clock,
+                             VersionGCSupport vgc, VersionGCOptions options, GCMonitor gcMonitor,
+                             boolean fullGCEnabled, boolean isFullGCDryRun) {
+        this(maxRevisionAgeMs, checkpoints, checkpointCleanup, clock, vgc, options, gcMonitor, fullGCEnabled, isFullGCDryRun, false);
+    }
+
     /**
      * With the given maximum age of revisions to keep (earliest time in the past to collect),
      * the desired precision in which times shall be sliced and the given limit on the number
@@ -107,7 +124,7 @@ public class VersionGCRecommendations {
      */
     VersionGCRecommendations(long maxRevisionAgeMs, Checkpoints checkpoints, boolean checkpointCleanup, Clock clock,
                                     VersionGCSupport vgc, VersionGCOptions options, GCMonitor gcMonitor,
-                                    boolean fullGCEnabled, boolean isFullGCDryRun) {
+                                    boolean fullGCEnabled, boolean isFullGCDryRun, boolean isFullGCDryRunWithStatistics) {
         boolean ignoreDueToCheckPoint;
         boolean ignoreFullGCDueToCheckPoint;
         long deletedOnceCount = 0;
@@ -115,8 +132,10 @@ public class VersionGCRecommendations {
         long oldestPossible;
         final AtomicLong oldestModifiedDocTimeStamp = new AtomicLong();
         final AtomicLong oldestModifiedDryRunDocTimeStamp = new AtomicLong();
+        final AtomicLong oldestModifiedDryRunWithStatisticsDocTimeStamp = new AtomicLong();
         String oldestModifiedDocId;
         String oldestModifiedDryRunDocId;
+        String oldestModifiedDryRunWithStatisticsDocId;
         long collectLimit = options.collectLimit;
 
         this.vgc = vgc;
@@ -124,6 +143,7 @@ public class VersionGCRecommendations {
         this.originalCollectLimit = options.collectLimit;
         this.fullGCEnabled = fullGCEnabled;
         this.isFullGCDryRun = isFullGCDryRun;
+        this.isFullGCDryRunWithStatistics = isFullGCDryRunWithStatistics;
 
         TimeInterval keep = new TimeInterval(clock.getTime() - maxRevisionAgeMs, Long.MAX_VALUE);
 
@@ -146,8 +166,15 @@ public class VersionGCRecommendations {
         final long fullGCDryRunTimestamp = (long) settings.get(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_TIMESTAMP_PROP);
         oldestModifiedDryRunDocId = (String) settings.get(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_DOCUMENT_ID_PROP);
 
+        final long fullGCDryRunWithStatisticsTimestamp = (long) settings.get(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_TIMESTAMP_PROP);
+        oldestModifiedDryRunWithStatisticsDocId = (String) settings.get(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DOCUMENT_ID_PROP);
+
         if (log.isDebugEnabled()) {
-            if (isFullGCDryRun) {
+            if (isFullGCDryRunWithStatistics) {
+                log.debug("lastOldestTimestamp: {}, fullGCDryRunTimestamp: {}, oldestModifiedDryRunDocId: {}",
+                        timestampToString(lastOldestTimestamp), timestampToString(fullGCDryRunWithStatisticsTimestamp),
+                        oldestModifiedDryRunWithStatisticsDocId);
+            } else if (isFullGCDryRun) {
                 log.debug("lastOldestTimestamp: {}, fullGCDryRunTimestamp: {}, oldestModifiedDryRunDocId: {}",
                         timestampToString(lastOldestTimestamp), timestampToString(fullGCDryRunTimestamp), oldestModifiedDryRunDocId);
             } else {
@@ -156,7 +183,19 @@ public class VersionGCRecommendations {
             }
         }
 
-        if (fullGCEnabled && isFullGCDryRun) {
+        if (fullGCEnabled && isFullGCDryRunWithStatistics) {
+            if (fullGCDryRunWithStatisticsTimestamp == 0) {
+                // it will only happen for the very first time, we run this fullGC in dry run with statistics mode
+                log.info("No fullGCDryRunWithStatisticsTimestamp found, querying for the oldest modified candidate");
+                vgc.getOldestModifiedDoc(clock).ifPresentOrElse(
+                        d -> oldestModifiedDryRunWithStatisticsDocTimeStamp.set(SECONDS.toMillis(ofNullable(d.getModified()).orElse(0L))),
+                        () -> oldestModifiedDryRunWithStatisticsDocTimeStamp.set(0L));
+                oldestModifiedDryRunWithStatisticsDocId = MIN_ID_VALUE;
+                log.info("fullGCDryRunWithStatisticsTimestamp found: {}", timestampToString(oldestModifiedDryRunWithStatisticsDocTimeStamp.get()));
+            } else {
+                oldestModifiedDryRunWithStatisticsDocTimeStamp.set(fullGCDryRunWithStatisticsTimestamp);
+            }
+        } else if (fullGCEnabled && isFullGCDryRun) {
             if (fullGCDryRunTimestamp == 0) {
                 // it will only happen for the very first time, we run this fullGC in dry run mode
                 log.info("No fullGCDryRunTimestamp found, querying for the oldest modified candidate");
@@ -185,7 +224,8 @@ public class VersionGCRecommendations {
             }
         }
 
-        TimeInterval scopeFullGC = new TimeInterval(isFullGCDryRun ? oldestModifiedDryRunDocTimeStamp.get() :
+        TimeInterval scopeFullGC = new TimeInterval(isFullGCDryRunWithStatistics ? oldestModifiedDryRunWithStatisticsDocTimeStamp.get()
+                : isFullGCDryRun ? oldestModifiedDryRunDocTimeStamp.get() :
                 oldestModifiedDocTimeStamp.get(), MAX_VALUE);
         scopeFullGC = scopeFullGC.notLaterThan(keep.fromMs);
 
@@ -246,7 +286,7 @@ public class VersionGCRecommendations {
         this.scope = scope;
         this.ignoreFullGCDueToCheckPoint = ignoreFullGCDueToCheckPoint;
         this.scopeFullGC = scopeFullGC;
-        this.fullGCId = isFullGCDryRun ? oldestModifiedDryRunDocId : oldestModifiedDocId;
+        this.fullGCId = isFullGCDryRunWithStatistics ? oldestModifiedDryRunWithStatisticsDocId : isFullGCDryRun ? oldestModifiedDryRunDocId : oldestModifiedDocId;
         this.scopeIsComplete = scope.toMs >= keep.fromMs;
         this.fullGCScopeIsComplete = scopeFullGC.toMs >= keep.fromMs;
         this.maxCollect = collectLimit;
@@ -262,14 +302,14 @@ public class VersionGCRecommendations {
      * @param stats the statistics from the last run
      */
     public void evaluate(VersionGCStats stats) {
-        if (stats.limitExceeded && !isFullGCDryRun) {
+        if (stats.limitExceeded && !isFullGCDryRun && !isFullGCDryRunWithStatistics) {
             // if the limit was exceeded, slash the recommended interval in half.
             long nextDuration = Math.max(precisionMs, scope.getDurationMs() / 2);
             gcmon.info("Limit {} documents exceeded, reducing next collection interval to {} seconds",
                     this.maxCollect, TimeUnit.MILLISECONDS.toSeconds(nextDuration));
             setVGCSetting(VersionGarbageCollector.SETTINGS_COLLECTION_REC_INTERVAL_PROP, nextDuration);
             stats.needRepeat = true;
-        } else if (!stats.canceled && !stats.ignoredGCDueToCheckPoint && !isFullGCDryRun) {
+        } else if (!stats.canceled && !stats.ignoredGCDueToCheckPoint && !isFullGCDryRun && !isFullGCDryRunWithStatistics) {
             // success, we would not expect to encounter revisions older than this in the future
             setVGCSetting(SETTINGS_COLLECTION_OLDEST_TIMESTAMP_PROP, scope.toMs);
 
@@ -310,7 +350,21 @@ public class VersionGCRecommendations {
             if (isFullGCDryRun) {
                 setVGCSetting(of(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_TIMESTAMP_PROP, stats.oldestModifiedDocTimeStamp,
                         SETTINGS_COLLECTION_FULL_GC_DRY_RUN_DOCUMENT_ID_PROP, stats.oldestModifiedDocId));
-            } else {
+            } else if (isFullGCDryRunWithStatistics) {
+
+                // Updates the entries in the versionGC document for dry run with statistics counters.
+                // Call this method after each fullGC iteration in dry run with statistics mode is completed.
+                setVGCSetting(of(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_TIMESTAMP_PROP, stats.oldestModifiedDocTimeStamp,
+                        SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DOCUMENT_ID_PROP, stats.oldestModifiedDocId,
+                        SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_DOCS_COUNT, stats.fullGCStatisticsDeletedDocsCount,
+                        SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_UPDATED_FULLGC_DOCS_COUNT, stats.fullGCStatisticsUpdatedFullGCDocsCount,
+                        SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_PROPS_COUNT, stats.fullGCStatisticsDeletedPropsCount,
+                        SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_INTERNAL_PROPS_COUNT, stats.fullGCStatisticsDeletedInternalPropsCount,
+                        SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_PROP_REVS_COUNT, stats.fullGCStatisticsDeletedPropRevsCount,
+                        SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_INTERNAL_PROP_REVS_COUNT, stats.fullGCStatisticsDeletedInternalPropRevsCount,
+                        SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_ORPHAN_NODES_COUNT, stats.fullGCStatisticsDeletedOrphanNodesCount));
+            }
+            else {
                 updateVGCSetting(of(SETTINGS_COLLECTION_FULL_GC_TIMESTAMP_PROP, stats.oldestModifiedDocTimeStamp,
                         SETTINGS_COLLECTION_FULL_GC_DOCUMENT_ID_PROP, stats.oldestModifiedDocId));
             }
@@ -325,6 +379,51 @@ public class VersionGCRecommendations {
         }
     }
 
+    /**
+     * Reads the current values from the versionGC document and initializes the stats object with the read values.
+     * Necessary because fullGC dry run with statistics may run in multiple iterations, and we need to add to the
+     * statistics from previous iterations.
+     *
+     * Use the reset dry run with statistics command (from oak-run) in order to clear the entries in the versionGC document
+     * before a fresh dry run with statistics is started.
+     * @param stats
+     */
+    public void initStatsForFullGCDryRunWithStatistics(VersionGCStats stats) {
+        Map<String, Object> statisticsMap = getVGCDryRunWithStatisticsValues();
+        stats.initForDryRunWithStatistics(statisticsMap);
+    }
+
+    /**
+     *
+     * Gets the current entries in the versionGC document for dry run with statistics mode.
+     * If the entries are not present, it will return default values.
+     * @return
+     */
+    private Map<String, Object> getVGCDryRunWithStatisticsValues() {
+        Document versionGCDoc = vgc.getDocumentStore().find(Collection.SETTINGS, SETTINGS_COLLECTION_ID, 0);
+        Map<String, Object> statisticsMap = new HashMap<>();
+        // default values
+        statisticsMap.put(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_DOCS_COUNT, 0L);
+        statisticsMap.put(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_UPDATED_FULLGC_DOCS_COUNT, 0L);
+        statisticsMap.put(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_PROPS_COUNT, 0L);
+        statisticsMap.put(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_INTERNAL_PROPS_COUNT, 0L);
+        statisticsMap.put(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_PROP_REVS_COUNT, 0L);
+        statisticsMap.put(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_INTERNAL_PROP_REVS_COUNT, 0L);
+        statisticsMap.put(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DELETED_ORPHAN_NODES_COUNT, 0L);
+        if (versionGCDoc != null) {
+            for (String k : versionGCDoc.keySet()) {
+                Object value = versionGCDoc.get(k);
+                if (value instanceof Number) {
+                    statisticsMap.put(k, ((Number) value).longValue());
+                }
+                if (value instanceof String) {
+                    statisticsMap.put(k, value);
+                }
+            }
+        }
+        return statisticsMap;
+    }
+
     private Map<String, Object> getVGCSettings() {
         Document versionGCDoc = vgc.getDocumentStore().find(Collection.SETTINGS, SETTINGS_COLLECTION_ID, 0);
         Map<String, Object> settings = new HashMap<>();
@@ -335,6 +434,8 @@ public class VersionGCRecommendations {
         settings.put(SETTINGS_COLLECTION_FULL_GC_DOCUMENT_ID_PROP, MIN_ID_VALUE);
         settings.put(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_TIMESTAMP_PROP, 0L);
         settings.put(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_DOCUMENT_ID_PROP, MIN_ID_VALUE);
+        settings.put(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_TIMESTAMP_PROP, 0L);
+        settings.put(SETTINGS_COLLECTION_FULL_GC_DRY_RUN_WITH_STATISTICS_DOCUMENT_ID_PROP, MIN_ID_VALUE);
         if (versionGCDoc != null) {
             for (String k : versionGCDoc.keySet()) {
                 Object value = versionGCDoc.get(k);
